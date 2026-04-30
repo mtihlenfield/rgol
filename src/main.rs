@@ -3,8 +3,80 @@ use crossterm::{ExecutableCommand, QueueableCommand, cursor, style, terminal};
 use log::{error, info, warn};
 use log4rs;
 use std::io::{Stdout, Write, stdout};
+use std::time::Duration;
 
-struct State {}
+#[derive(Clone, Copy)]
+struct Position {
+    col: u16,
+    row: u16,
+}
+
+// TODO: Can I use type state's here? So that you can't call `toggle` in running mode and can't
+// step in editing mode?
+enum GameMode {
+    Running,
+    Editing,
+}
+
+struct State {
+    rows: u16,
+    cols: u16,
+    map: Vec<Vec<u8>>,
+    cursor: Position,
+    mode: GameMode,
+}
+
+impl State {
+    pub fn new(cols: u16, rows: u16) -> State {
+        State {
+            // TODO: is storing it like this cache friendly?
+            rows,
+            cols,
+            map: vec![vec![0; rows as usize]; cols as usize],
+            cursor: Position { col: 0, row: 0 },
+            mode: GameMode::Editing,
+        }
+    }
+    pub fn step(&mut self) {}
+    pub fn toggle(&mut self, pos: Position) {}
+    pub fn handle_key(&mut self, key_ev: event::KeyEvent) -> bool {
+        if key_ev.code.is_char('q') {
+            return true;
+        }
+
+        match self.mode {
+            GameMode::Editing => self.handle_edit_update(key_ev),
+            GameMode::Running => self.handle_running_update(key_ev),
+        };
+
+        false
+    }
+
+    fn handle_edit_update(&mut self, key_ev: event::KeyEvent) {
+        match key_ev.code.as_char() {
+            Some('s') => self.cursor.row = (self.cursor.row + 1) % self.rows,
+            Some('d') => self.cursor.col = (self.cursor.col + 1) % self.cols,
+            Some('w') => {
+                self.cursor.row = if self.cursor.row == 0 {
+                    self.rows - 1
+                } else {
+                    self.cursor.row - 1
+                };
+            }
+            Some('a') => {
+                self.cursor.col = if self.cursor.col == 0 {
+                    self.cols - 1
+                } else {
+                    self.cursor.col - 1
+                };
+            }
+            Some(_) => {}
+            None => {}
+        };
+    }
+
+    fn handle_running_update(&mut self, key_ev: event::KeyEvent) {}
+}
 
 struct ScreenBuf {
     rows: u16,
@@ -28,12 +100,6 @@ impl ScreenBuf {
             for c in row {
                 *c = ' ';
             }
-        }
-    }
-
-    pub fn clear_row(&mut self, row: u16) {
-        for c in &mut self.back[row as usize] {
-            *c = ' '
         }
     }
 
@@ -89,9 +155,23 @@ impl Screen {
         }
 
         self.screen_buf.clear();
+        self.draw_map(new_state)?;
+
+        match new_state.mode {
+            GameMode::Running => out.queue(cursor::Hide)?,
+            GameMode::Editing => {
+                out.queue(cursor::Show)?;
+                out.queue(cursor::MoveTo(new_state.cursor.col, new_state.cursor.row))?
+            }
+        };
+
         self.screen_buf.flush(&mut out)?;
 
         out.flush()
+    }
+
+    fn draw_map(&mut self, new_state: &State) -> std::io::Result<()> {
+        Ok(())
     }
 }
 
@@ -118,27 +198,45 @@ fn main() {
     let (cols, rows) = terminal::size().expect("Failed to get term size.");
     info!("Term size - rows: {}, cols: {}", rows, cols);
     let mut screen = Screen::new(rows, cols);
-    let state = State {};
+    let mut state = State::new(cols, rows);
     screen.update(&state).expect("Failed to init screen.");
 
-    loop {
-        let ev = event::read().expect("Failed to read event.");
-        match ev {
-            event::Event::Key(key_event) => {
-                if key_event.code.is_char('q') {
-                    break;
-                }
-            }
-            event::Event::Resize(cols, rows) => {
-                if let Err(err) = screen.resize(rows, cols) {
-                    error!("Got error while resizing screen: {err}");
-                }
+    // TODO:
+    // - Probably start with a way to draw on the screen:
+    //     - Cursor movement with hjkl or wasd
+    // - Add map structure for storing the current state
+    // - Add the ability to add or remove from the state by moving the cursor
+    // and clicking space bar
+    // - Start/stop the simulation with 'p'
+    //    - Cursor goes away while sim is running, comes back when paused
+    // - 'r' for map reset
 
-                if let Err(err) = screen.update(&state) {
-                    error!("Got error while updating screen: {err}");
+    loop {
+        let ev_ready = event::poll(Duration::from_secs(0)).expect("Failed to pull for event");
+        if ev_ready {
+            let ev = event::read().expect("Failed to read event.");
+            match ev {
+                event::Event::Key(key_event) => {
+                    let should_exit = state.handle_key(key_event);
+
+                    if should_exit {
+                        break;
+                    }
                 }
-            }
-            _ => {}
-        };
+                event::Event::Resize(cols, rows) => {
+                    if let Err(err) = screen.resize(rows, cols) {
+                        error!("Got error while resizing screen: {err}");
+                    }
+
+                    if let Err(err) = screen.update(&state) {
+                        error!("Got error while updating screen: {err}");
+                    }
+                }
+                _ => {}
+            };
+        }
+
+        state.step();
+        screen.update(&state).expect("Failed to update screen");
     }
 }
