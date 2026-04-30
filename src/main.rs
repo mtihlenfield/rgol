@@ -3,41 +3,89 @@ use crossterm::{ExecutableCommand, QueueableCommand, cursor, style, terminal};
 use log::{error, info, warn};
 use log4rs;
 use std::io::{Stdout, Write, stdout};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy)]
 struct Position {
-    col: u16,
-    row: u16,
+    col: usize,
+    row: usize,
 }
 
-// TODO: Can I use type state's here? So that you can't call `toggle` in running mode and can't
-// step in editing mode?
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum GameMode {
     Running,
     Editing,
 }
 
 struct State {
-    map: Vec<Vec<u8>>,
+    map: Vec<Vec<bool>>,
     mode: GameMode,
-    rows: u16,
-    cols: u16,
+    rows: usize,
+    cols: usize,
     cursor: Position,
 }
 
 impl State {
-    pub fn new(cols: u16, rows: u16) -> State {
+    pub fn new(cols: usize, rows: usize) -> State {
         State {
-            // TODO: is storing it like this cache friendly?
             rows,
             cols,
-            map: vec![vec![0; cols as usize]; rows as usize],
+            map: vec![vec![false; cols]; rows],
             cursor: Position { col: 0, row: 0 },
             mode: GameMode::Editing,
         }
     }
-    pub fn step(&mut self) {}
+
+    fn live_neighbors(&self, row: usize, col: usize) -> usize {
+        let positions = vec![
+            (row.checked_sub(1), col.checked_sub(1)),
+            (row.checked_sub(1), Some(col)),
+            (row.checked_sub(1), Some(col + 1)),
+            (Some(row), col.checked_sub(1)),
+            (Some(row), Some(col + 1)),
+            (Some(row + 1), col.checked_sub(1)),
+            (Some(row + 1), Some(col)),
+            (Some(row + 1), Some(col + 1)),
+        ];
+
+        positions
+            .iter()
+            .filter(|pos| pos.0.is_some() && pos.1.is_some())
+            .map(|pos| (pos.0.unwrap(), pos.1.unwrap()))
+            .filter(|pos| pos.0 < self.rows && pos.1 < self.cols)
+            .filter(|pos| self.get_cell(pos.0, pos.1))
+            .count()
+    }
+
+    fn set_cell(&mut self, row: usize, col: usize, state: bool) {
+        self.map[row][col] = state;
+    }
+
+    fn get_cell(&self, row: usize, col: usize) -> bool {
+        self.map[row][col]
+    }
+
+    pub fn step(&mut self) {
+        // Rules:
+        // 1. Any living cell with fewer than two live neighbors dies (underpopulation)
+        // 2. Any live cell with two or three live neighbors lives on to the next generation
+        // 3. Any live cell with more then three live neighbors dies (overpopulation)
+        // 4. Any dead cell with exactly three live neighbors becomes a live cell (reproduction)
+        // TODO: rules don't appear to be working correctly currently
+        for row in 0..self.rows {
+            for col in 0..self.cols {
+                let live = self.get_cell(row, col);
+                let live_neighbors = self.live_neighbors(row, col);
+
+                if live && (live_neighbors < 2 || live_neighbors > 3) {
+                    self.set_cell(row, col, false);
+                } else if !live && live_neighbors == 3 {
+                    self.set_cell(row, col, true);
+                }
+            }
+        }
+    }
+
     pub fn handle_key(&mut self, key_ev: event::KeyEvent) -> bool {
         if key_ev.code.is_char('q') {
             return true;
@@ -69,9 +117,11 @@ impl State {
                     self.cursor.col - 1
                 };
             }
-            Some(' ') => {
-                self.map[self.cursor.row as usize][self.cursor.col as usize] ^= 1;
-            }
+            Some(' ') => self.set_cell(
+                self.cursor.row,
+                self.cursor.col,
+                !self.get_cell(self.cursor.row, self.cursor.col),
+            ),
             Some('p') => self.mode = GameMode::Running,
             Some(_) | None => {}
         };
@@ -115,7 +165,6 @@ impl ScreenBuf {
     }
 
     pub fn flush(&mut self, out: &mut Stdout) -> std::io::Result<()> {
-        // TODO: make sure this traversal is cache friendly
         for row in 0..self.rows {
             for col in 0..self.cols {
                 let front_col = self.front[row as usize][col as usize];
@@ -168,7 +217,10 @@ impl Screen {
             GameMode::Running => out.queue(cursor::Hide)?,
             GameMode::Editing => {
                 out.queue(cursor::Show)?;
-                out.queue(cursor::MoveTo(new_state.cursor.col, new_state.cursor.row))?
+                out.queue(cursor::MoveTo(
+                    new_state.cursor.col as u16,
+                    new_state.cursor.row as u16,
+                ))?
             }
         };
 
@@ -182,10 +234,10 @@ impl Screen {
         // line up with the screen buff size?
         for row in 0..new_state.rows {
             for col in 0..new_state.cols {
-                if new_state.map[row as usize][col as usize] == 1 {
-                    self.screen_buf.write(row, col, '0');
+                if new_state.get_cell(row, col) {
+                    self.screen_buf.write(row as u16, col as u16, '0');
                 } else {
-                    self.screen_buf.write(row, col, ' ');
+                    self.screen_buf.write(row as u16, col as u16, ' ');
                 }
             }
         }
@@ -215,8 +267,10 @@ fn main() {
     let (cols, rows) = terminal::size().expect("Failed to get term size.");
     info!("Term size - rows: {}, cols: {}", rows, cols);
     let mut screen = Screen::new(rows, cols);
-    let mut state = State::new(cols, rows);
+    let mut state = State::new(cols as usize, rows as usize);
     screen.update(&state).expect("Failed to init screen.");
+
+    let mut last_step = Instant::now();
 
     // TODO:
     // - Start/stop the simulation with 'p'
@@ -249,8 +303,11 @@ fn main() {
             };
         }
 
-        // TODO: probably don't want to step at the refresh rate... need a timer
-        state.step();
+        if last_step.elapsed().as_secs() >= 1 && state.mode == GameMode::Running {
+            state.step();
+            last_step = Instant::now();
+        }
+
         screen.update(&state).expect("Failed to update screen");
     }
 }
