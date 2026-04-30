@@ -19,8 +19,8 @@ enum GameMode {
 }
 
 struct State {
-    pub map: Vec<Vec<u8>>,
-    pub mode: GameMode,
+    map: Vec<Vec<u8>>,
+    mode: GameMode,
     rows: u16,
     cols: u16,
     cursor: Position,
@@ -70,15 +70,19 @@ impl State {
                 };
             }
             Some(' ') => {
-                self.map[self.cursor.col as usize][self.cursor.row as usize] =
-                    !self.map[self.cursor.col as usize][self.cursor.row as usize]
+                self.map[self.cursor.row as usize][self.cursor.col as usize] ^= 1;
             }
-            Some(_) => {}
-            None => {}
+            Some('p') => self.mode = GameMode::Running,
+            Some(_) | None => {}
         };
     }
 
-    fn handle_running_update(&mut self, key_ev: event::KeyEvent) {}
+    fn handle_running_update(&mut self, key_ev: event::KeyEvent) {
+        match key_ev.code.as_char() {
+            Some('p') => self.mode = GameMode::Editing,
+            Some(_) | None => {}
+        }
+    }
 }
 
 struct ScreenBuf {
@@ -127,7 +131,7 @@ impl ScreenBuf {
     }
 }
 
-pub struct Screen {
+struct Screen {
     screen_buf: ScreenBuf,
     initialized: bool,
 }
@@ -158,7 +162,7 @@ impl Screen {
         }
 
         self.screen_buf.clear();
-        self.draw_map(new_state)?;
+        self.draw_map(new_state);
 
         match new_state.mode {
             GameMode::Running => out.queue(cursor::Hide)?,
@@ -173,8 +177,18 @@ impl Screen {
         out.flush()
     }
 
-    fn draw_map(&mut self, new_state: &State) -> std::io::Result<()> {
-        Ok(())
+    fn draw_map(&mut self, new_state: &State) {
+        // TODO: indexing use the new_state rows/cols is a little risky - how can I be sure those
+        // line up with the screen buff size?
+        for row in 0..new_state.rows {
+            for col in 0..new_state.cols {
+                if new_state.map[row as usize][col as usize] == 1 {
+                    self.screen_buf.write(row, col, '0');
+                } else {
+                    self.screen_buf.write(row, col, ' ');
+                }
+            }
+        }
     }
 }
 
@@ -205,8 +219,6 @@ fn main() {
     screen.update(&state).expect("Failed to init screen.");
 
     // TODO:
-    // - Add the ability to add or remove from the state by moving the cursor
-    // and clicking space bar
     // - Start/stop the simulation with 'p'
     //    - Cursor goes away while sim is running, comes back when paused
     // - 'r' for map reset
@@ -224,6 +236,7 @@ fn main() {
                     }
                 }
                 event::Event::Resize(cols, rows) => {
+                    // TODO: handle resizing correctly. Need to update state too
                     if let Err(err) = screen.resize(rows, cols) {
                         error!("Got error while resizing screen: {err}");
                     }
