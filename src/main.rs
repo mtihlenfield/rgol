@@ -19,11 +19,11 @@ enum GameMode {
 }
 
 struct State {
+    pub map: Vec<Vec<u8>>,
+    pub mode: GameMode,
     rows: u16,
     cols: u16,
-    map: Vec<Vec<u8>>,
     cursor: Position,
-    mode: GameMode,
 }
 
 impl State {
@@ -32,13 +32,12 @@ impl State {
             // TODO: is storing it like this cache friendly?
             rows,
             cols,
-            map: vec![vec![0; rows as usize]; cols as usize],
+            map: vec![vec![0; cols as usize]; rows as usize],
             cursor: Position { col: 0, row: 0 },
             mode: GameMode::Editing,
         }
     }
     pub fn step(&mut self) {}
-    pub fn toggle(&mut self, pos: Position) {}
     pub fn handle_key(&mut self, key_ev: event::KeyEvent) -> bool {
         if key_ev.code.is_char('q') {
             return true;
@@ -69,6 +68,10 @@ impl State {
                 } else {
                     self.cursor.col - 1
                 };
+            }
+            Some(' ') => {
+                self.map[self.cursor.col as usize][self.cursor.row as usize] =
+                    !self.map[self.cursor.col as usize][self.cursor.row as usize]
             }
             Some(_) => {}
             None => {}
@@ -202,9 +205,6 @@ fn main() {
     screen.update(&state).expect("Failed to init screen.");
 
     // TODO:
-    // - Probably start with a way to draw on the screen:
-    //     - Cursor movement with hjkl or wasd
-    // - Add map structure for storing the current state
     // - Add the ability to add or remove from the state by moving the cursor
     // and clicking space bar
     // - Start/stop the simulation with 'p'
@@ -236,6 +236,7 @@ fn main() {
             };
         }
 
+        // TODO: probably don't want to step at the refresh rate... need a timer
         state.step();
         screen.update(&state).expect("Failed to update screen");
     }
