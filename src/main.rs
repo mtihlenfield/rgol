@@ -237,7 +237,7 @@ impl Screen {
                 if new_state.get_cell(row, col) {
                     self.screen_buf.write(row as u16, col as u16, '0');
                 } else {
-                    self.screen_buf.write(row as u16, col as u16, ' ');
+                    self.screen_buf.write(row as u16, col as u16, '.');
                 }
             }
         }
@@ -273,8 +273,7 @@ fn main() {
     let mut last_step = Instant::now();
 
     // TODO:
-    // - Start/stop the simulation with 'p'
-    //    - Cursor goes away while sim is running, comes back when paused
+    // - Enable mouse events to make drawing easier
     // - 'r' for map reset
 
     loop {
@@ -303,7 +302,7 @@ fn main() {
             };
         }
 
-        if last_step.elapsed().as_secs() >= 1 && state.mode == GameMode::Running {
+        if last_step.elapsed().as_millis() >= 500 && state.mode == GameMode::Running {
             state.step();
             last_step = Instant::now();
         }
