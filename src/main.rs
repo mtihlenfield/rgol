@@ -11,7 +11,7 @@ struct Position {
     row: usize,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 enum GameMode {
     Running,
     Editing,
@@ -55,7 +55,7 @@ impl State {
     }
 
     fn live_neighbors(&self, row: usize, col: usize) -> usize {
-        vec![
+        [
             self.relative_pos(row, col, -1, -1),
             self.relative_pos(row, col, -1, 0),
             self.relative_pos(row, col, -1, 1),
@@ -179,19 +179,15 @@ struct ScreenBuf {
 impl ScreenBuf {
     pub fn new(rows: u16, cols: u16) -> ScreenBuf {
         ScreenBuf {
-            rows: rows,
-            cols: cols,
+            rows,
+            cols,
             back: vec![vec![' '; cols as usize]; rows as usize],
             front: vec![vec![' '; cols as usize]; rows as usize],
         }
     }
 
     pub fn clear(&mut self) {
-        for row in &mut self.back {
-            for c in row {
-                *c = ' ';
-            }
-        }
+        self.back.iter_mut().for_each(|row| row.fill(' '));
     }
 
     pub fn write(&mut self, row: u16, col: u16, val: char) {
