@@ -19,6 +19,7 @@ enum GameMode {
 
 struct State {
     map: Vec<Vec<bool>>,
+    next_map: Vec<Vec<bool>>,
     mode: GameMode,
     rows: usize,
     cols: usize,
@@ -31,34 +32,51 @@ impl State {
             rows,
             cols,
             map: vec![vec![false; cols]; rows],
-            cursor: Position { col: 0, row: 0 },
+            next_map: vec![vec![false; cols]; rows],
+            cursor: Position {
+                col: cols.div_ceil(2),
+                row: rows.div_ceil(2),
+            },
             mode: GameMode::Editing,
         }
     }
 
-    fn live_neighbors(&self, row: usize, col: usize) -> usize {
-        let positions = vec![
-            (row.checked_sub(1), col.checked_sub(1)),
-            (row.checked_sub(1), Some(col)),
-            (row.checked_sub(1), Some(col + 1)),
-            (Some(row), col.checked_sub(1)),
-            (Some(row), Some(col + 1)),
-            (Some(row + 1), col.checked_sub(1)),
-            (Some(row + 1), Some(col)),
-            (Some(row + 1), Some(col + 1)),
-        ];
+    fn relative_pos(
+        &self,
+        row: usize,
+        col: usize,
+        row_move: isize,
+        col_move: isize,
+    ) -> (usize, usize) {
+        let row = row.checked_add_signed(row_move).unwrap_or(self.rows - 1) % self.rows;
+        let col = col.checked_add_signed(col_move).unwrap_or(self.cols - 1) % self.cols;
 
-        positions
-            .iter()
-            .filter(|pos| pos.0.is_some() && pos.1.is_some())
-            .map(|pos| (pos.0.unwrap(), pos.1.unwrap()))
-            .filter(|pos| pos.0 < self.rows && pos.1 < self.cols)
-            .filter(|pos| self.get_cell(pos.0, pos.1))
-            .count()
+        (row, col)
+    }
+
+    fn live_neighbors(&self, row: usize, col: usize) -> usize {
+        vec![
+            self.relative_pos(row, col, -1, -1),
+            self.relative_pos(row, col, -1, 0),
+            self.relative_pos(row, col, -1, 1),
+            self.relative_pos(row, col, 0, -1),
+            self.relative_pos(row, col, 0, 1),
+            self.relative_pos(row, col, 1, -1),
+            self.relative_pos(row, col, 1, 0),
+            self.relative_pos(row, col, 1, 1),
+        ]
+        .iter()
+        .filter(|pos| self.get_cell(pos.0, pos.1))
+        .count()
+    }
+
+    fn set_next_cell(&mut self, row: usize, col: usize, state: bool) {
+        self.next_map[row][col] = state;
     }
 
     fn set_cell(&mut self, row: usize, col: usize, state: bool) {
         self.map[row][col] = state;
+        self.next_map[row][col] = state;
     }
 
     fn get_cell(&self, row: usize, col: usize) -> bool {
@@ -78,12 +96,16 @@ impl State {
                 let live_neighbors = self.live_neighbors(row, col);
 
                 if live && (live_neighbors < 2 || live_neighbors > 3) {
-                    self.set_cell(row, col, false);
+                    self.set_next_cell(row, col, false);
                 } else if !live && live_neighbors == 3 {
-                    self.set_cell(row, col, true);
+                    self.set_next_cell(row, col, true);
+                } else if live && live_neighbors == 2 {
+                    self.set_next_cell(row, col, true);
                 }
             }
         }
+
+        self.map.clone_from(&self.next_map);
     }
 
     pub fn handle_key(&mut self, key_ev: event::KeyEvent) -> bool {
@@ -123,6 +145,10 @@ impl State {
                 !self.get_cell(self.cursor.row, self.cursor.col),
             ),
             Some('p') => self.mode = GameMode::Running,
+            Some('x') => {
+                let live = self.live_neighbors(self.cursor.row, self.cursor.col);
+                info!("live neighbors: {}", live);
+            }
             Some(_) | None => {}
         };
     }
