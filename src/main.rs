@@ -89,6 +89,7 @@ impl State {
         // 2. Any live cell with two or three live neighbors lives on to the next generation
         // 3. Any live cell with more then three live neighbors dies (overpopulation)
         // 4. Any dead cell with exactly three live neighbors becomes a live cell (reproduction)
+        self.next_map.iter_mut().for_each(|row| row.fill(false));
         for row in 0..self.rows {
             for col in 0..self.cols {
                 let live = self.get_cell(row, col);
@@ -96,7 +97,7 @@ impl State {
 
                 if live && (live_neighbors < 2 || live_neighbors > 3) {
                     self.set_next_cell(row, col, false);
-                } else if !live && live_neighbors == 3 {
+                } else if live_neighbors == 3 {
                     self.set_next_cell(row, col, true);
                 } else if live && live_neighbors == 2 {
                     self.set_next_cell(row, col, true);
