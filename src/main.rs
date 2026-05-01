@@ -280,6 +280,10 @@ impl Screen {
 
 impl Drop for Screen {
     fn drop(&mut self) {
+        if let Err(_) = stdout().execute(cursor::Show) {
+            warn!("Failed to bring back cursor");
+        }
+
         if let Err(_) = stdout().execute(terminal::Clear(terminal::ClearType::All)) {
             warn!("Failed to clear screen on close.");
         }
