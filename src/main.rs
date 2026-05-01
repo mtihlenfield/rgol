@@ -165,7 +165,18 @@ impl State {
     }
 
     pub fn resize(&mut self, rows: usize, cols: usize) {
-        // TODO
+        // This is a sort of naive resize - eventually it would be nice to be able to do
+        // a resize that keeps things centered
+        self.rows = rows;
+        self.cols = cols;
+        self.cursor.row = self.cursor.row % rows;
+        self.cursor.col = self.cursor.col % cols;
+        self.map.iter_mut().for_each(|row| row.resize(cols, false));
+        self.map.resize(rows, vec![false; cols]);
+        self.next_map
+            .iter_mut()
+            .for_each(|row| row.resize(cols, false));
+        self.next_map.resize(rows, vec![false; cols]);
     }
 }
 
