@@ -89,7 +89,6 @@ impl State {
         // 2. Any live cell with two or three live neighbors lives on to the next generation
         // 3. Any live cell with more then three live neighbors dies (overpopulation)
         // 4. Any dead cell with exactly three live neighbors becomes a live cell (reproduction)
-        // TODO: rules don't appear to be working correctly currently
         for row in 0..self.rows {
             for col in 0..self.cols {
                 let live = self.get_cell(row, col);
@@ -149,6 +148,10 @@ impl State {
                 let live = self.live_neighbors(self.cursor.row, self.cursor.col);
                 info!("live neighbors: {}", live);
             }
+            Some('r') => {
+                self.map.iter_mut().for_each(|row| row.fill(false));
+                self.next_map.iter_mut().for_each(|row| row.fill(false));
+            }
             Some(_) | None => {}
         };
     }
@@ -158,6 +161,10 @@ impl State {
             Some('p') => self.mode = GameMode::Editing,
             Some(_) | None => {}
         }
+    }
+
+    pub fn resize(&mut self, rows: usize, cols: usize) {
+        // TODO
     }
 }
 
@@ -298,10 +305,6 @@ fn main() {
 
     let mut last_step = Instant::now();
 
-    // TODO:
-    // - Enable mouse events to make drawing easier
-    // - 'r' for map reset
-
     loop {
         let ev_ready = event::poll(Duration::from_secs(0)).expect("Failed to pull for event");
         if ev_ready {
@@ -315,14 +318,11 @@ fn main() {
                     }
                 }
                 event::Event::Resize(cols, rows) => {
-                    // TODO: handle resizing correctly. Need to update state too
                     if let Err(err) = screen.resize(rows, cols) {
                         error!("Got error while resizing screen: {err}");
                     }
 
-                    if let Err(err) = screen.update(&state) {
-                        error!("Got error while updating screen: {err}");
-                    }
+                    state.resize(rows as usize, cols as usize);
                 }
                 _ => {}
             };
